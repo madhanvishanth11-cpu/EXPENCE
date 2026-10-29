@@ -96,7 +96,7 @@ export const AddTransaction = () => {
     }
 
     if (!accountId) {
-      setFormError('Please select an account.');
+      setFormError('Please select or create an account before saving transactions.');
       return;
     }
 
@@ -109,7 +109,7 @@ export const AddTransaction = () => {
 
     try {
       if (isEditing) {
-        await updateTransaction(editingTransaction.id, {
+        const updated = await updateTransaction(editingTransaction.id, {
           account_id: accountId,
           category_id: type === 'transfer' ? null : categoryId,
           type,
@@ -118,9 +118,12 @@ export const AddTransaction = () => {
           description: description.trim(),
           transaction_date: transactionDate,
         });
+        if (!updated) {
+          throw new Error('Database did not confirm the transaction update.');
+        }
         setSuccessMsg('Transaction updated in database successfully.');
       } else {
-        await addTransaction({
+        const created = await addTransaction({
           account_id: accountId,
           destination_account_id: destinationAccountId,
           category_id: type === 'transfer' ? null : categoryId,
@@ -130,7 +133,10 @@ export const AddTransaction = () => {
           description: description.trim() || (type === 'transfer' ? 'Account Transfer' : ''),
           transaction_date: transactionDate,
         });
-        setSuccessMsg(type === 'transfer' ? 'Transfer completed successfully.' : 'Transaction logged successfully.');
+        if (!created) {
+          throw new Error('Database did not confirm the transaction save.');
+        }
+        setSuccessMsg(type === 'transfer' ? 'Transfer completed successfully.' : 'Transaction saved in database successfully.');
       }
 
       setTimeout(() => {

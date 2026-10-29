@@ -52,53 +52,93 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const signIn = async (email, password) => {
-    if (!supabase) throw new Error('Supabase client is not configured');
-    setAuthError(null);
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) {
-      setAuthError(error.message);
-      throw error;
+    if (!supabase) {
+      const err = new Error('Supabase client is not configured. Please check .env.local.');
+      setAuthError(err.message);
+      throw err;
     }
-    return data;
+    setAuthError(null);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        setAuthError(error.message);
+        throw error;
+      }
+      return data;
+    } catch (err) {
+      const friendlyMsg = err.message?.includes('Failed to fetch')
+        ? 'Cannot reach Supabase database. Please verify your internet connection or check if your Supabase project is active.'
+        : err.message || 'Authentication failed';
+      setAuthError(friendlyMsg);
+      throw new Error(friendlyMsg);
+    }
   };
 
   const signUp = async (email, password, displayName) => {
-    if (!supabase) throw new Error('Supabase client is not configured');
-    setAuthError(null);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          display_name: displayName,
-        },
-      },
-    });
-    if (error) {
-      setAuthError(error.message);
-      throw error;
+    if (!supabase) {
+      const err = new Error('Supabase client is not configured. Please check .env.local.');
+      setAuthError(err.message);
+      throw err;
     }
-    return data;
+    setAuthError(null);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            display_name: displayName,
+          },
+        },
+      });
+      if (error) {
+        setAuthError(error.message);
+        throw error;
+      }
+      return data;
+    } catch (err) {
+      const friendlyMsg = err.message?.includes('Failed to fetch')
+        ? 'Cannot reach Supabase database. Please verify your internet connection or check if your Supabase project is active.'
+        : err.message || 'Account creation failed';
+      setAuthError(friendlyMsg);
+      throw new Error(friendlyMsg);
+    }
   };
 
   const signOut = async () => {
     if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    setUser(null);
-    setSession(null);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } finally {
+      setUser(null);
+      setSession(null);
+    }
   };
 
   const resetPassword = async (email) => {
-    if (!supabase) throw new Error('Supabase client is not configured');
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    });
-    if (error) throw error;
-    return data;
+    if (!supabase) {
+      const err = new Error('Supabase client is not configured.');
+      setAuthError(err.message);
+      throw err;
+    }
+    setAuthError(null);
+    try {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      const friendlyMsg = err.message?.includes('Failed to fetch')
+        ? 'Cannot reach Supabase database.'
+        : err.message || 'Failed to send password reset email';
+      setAuthError(friendlyMsg);
+      throw new Error(friendlyMsg);
+    }
   };
 
   return (

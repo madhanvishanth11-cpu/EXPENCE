@@ -3,11 +3,18 @@ import { supabase } from './supabase';
 /**
  * SpendWise Database Access Layer
  * All operations run through authenticated Supabase client with RLS active.
+ * Strict Error Handling: Never silently fail or pretend success when database is disconnected.
  */
+
+const assertClient = () => {
+  if (!supabase) {
+    throw new Error('Supabase client is not initialized. Please verify your database connection in Settings.');
+  }
+};
 
 // --- Profiles ---
 export const getProfile = async (userId) => {
-  if (!supabase) return null;
+  assertClient();
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
@@ -18,7 +25,7 @@ export const getProfile = async (userId) => {
 };
 
 export const updateProfile = async (userId, updates) => {
-  if (!supabase) return null;
+  assertClient();
   const { data, error } = await supabase
     .from('profiles')
     .update(updates)
@@ -31,7 +38,7 @@ export const updateProfile = async (userId, updates) => {
 
 // --- Accounts ---
 export const getAccounts = async () => {
-  if (!supabase) return [];
+  assertClient();
   const { data, error } = await supabase
     .from('accounts')
     .select('*')
@@ -41,26 +48,27 @@ export const getAccounts = async () => {
 };
 
 export const createAccount = async (account) => {
-  if (!supabase) return null;
+  assertClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) throw new Error('Not authenticated: please sign in to create accounts');
 
   const { data, error } = await supabase
     .from('accounts')
     .insert({
       user_id: user.id,
       name: account.name,
-      account_type: account.account_type || account.type,
+      account_type: account.account_type || account.type || 'bank',
       opening_balance: Number(account.opening_balance || account.balance || 0),
     })
     .select()
     .single();
   if (error) throw error;
+  if (!data) throw new Error('Database did not return created account confirmation');
   return data;
 };
 
 export const updateAccount = async (id, account) => {
-  if (!supabase) return null;
+  assertClient();
   const { data, error } = await supabase
     .from('accounts')
     .update({
@@ -72,18 +80,19 @@ export const updateAccount = async (id, account) => {
     .select()
     .single();
   if (error) throw error;
+  if (!data) throw new Error('Database did not return updated account confirmation');
   return data;
 };
 
 export const deleteAccount = async (id) => {
-  if (!supabase) return;
+  assertClient();
   const { error } = await supabase.from('accounts').delete().eq('id', id);
   if (error) throw error;
 };
 
 // --- Categories ---
 export const getCategories = async () => {
-  if (!supabase) return [];
+  assertClient();
   const { data, error } = await supabase
     .from('categories')
     .select('*')
@@ -93,9 +102,9 @@ export const getCategories = async () => {
 };
 
 export const createCategory = async (category) => {
-  if (!supabase) return null;
+  assertClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) throw new Error('Not authenticated: please sign in to create categories');
 
   const { data, error } = await supabase
     .from('categories')
@@ -108,12 +117,13 @@ export const createCategory = async (category) => {
     .select()
     .single();
   if (error) throw error;
+  if (!data) throw new Error('Database did not return created category confirmation');
   return data;
 };
 
 // --- Transactions ---
 export const getTransactions = async () => {
-  if (!supabase) return [];
+  assertClient();
   const { data, error } = await supabase
     .from('transactions')
     .select(`
@@ -128,9 +138,9 @@ export const getTransactions = async () => {
 };
 
 export const createTransaction = async (tx) => {
-  if (!supabase) return null;
+  assertClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) throw new Error('Not authenticated: please sign in to save transactions');
 
   // If this is a transfer, call the atomic RPC function
   if (tx.type === 'transfer' && tx.destination_account_id) {
@@ -143,7 +153,8 @@ export const createTransaction = async (tx) => {
       p_transaction_date: tx.transaction_date,
     });
     if (rpcError) throw rpcError;
-    return { transfer_group_id: groupId };
+    if (!groupId) throw new Error('Database transfer RPC failed: No transaction ID returned');
+    return { id: groupId, transfer_group_id: groupId, type: 'transfer' };
   }
 
   const { data, error } = await supabase
@@ -166,11 +177,17 @@ export const createTransaction = async (tx) => {
     `)
     .single();
   if (error) throw error;
+  if (!data || !data.id) {
+    throw new Error('Database did not confirm the transaction save. Please check your database connection.');
+  }
   return data;
 };
 
 export const updateTransaction = async (id, tx) => {
-  if (!supabase) return null;
+  assertClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated: please sign in to update transactions');
+
   const { data, error } = await supabase
     .from('transactions')
     .update({
@@ -190,12 +207,14 @@ export const updateTransaction = async (id, tx) => {
     `)
     .single();
   if (error) throw error;
+  if (!data || !data.id) {
+    throw new Error('Database did not confirm the transaction update.');
+  }
   return data;
 };
 
 export const deleteTransaction = async (id, transferGroupId = null) => {
-  if (!supabase) return;
-  // If transaction was part of an atomic transfer group, delete both sides atomically
+  assertClient();
   if (transferGroupId) {
     const { error } = await supabase
       .from('transactions')
@@ -210,7 +229,7 @@ export const deleteTransaction = async (id, transferGroupId = null) => {
 
 // --- Budgets ---
 export const getBudgets = async (monthStart) => {
-  if (!supabase) return [];
+  assertClient();
   let query = supabase.from('budgets').select(`
     *,
     category:categories (id, name, icon)
@@ -226,9 +245,9 @@ export const getBudgets = async (monthStart) => {
 };
 
 export const saveBudget = async (budget) => {
-  if (!supabase) return null;
+  assertClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) throw new Error('Not authenticated: please sign in to save budgets');
 
   if (budget.id) {
     const { data, error } = await supabase
@@ -240,6 +259,7 @@ export const saveBudget = async (budget) => {
       .select(`*, category:categories (id, name, icon)`)
       .single();
     if (error) throw error;
+    if (!data) throw new Error('Database did not confirm budget update');
     return data;
   }
 
@@ -254,11 +274,61 @@ export const saveBudget = async (budget) => {
     .select(`*, category:categories (id, name, icon)`)
     .single();
   if (error) throw error;
+  if (!data) throw new Error('Database did not confirm budget save');
   return data;
 };
 
 export const deleteBudget = async (id) => {
-  if (!supabase) return;
+  assertClient();
   const { error } = await supabase.from('budgets').delete().eq('id', id);
   if (error) throw error;
+};
+
+// --- Auto-Seed Defaults for new/existing users without accounts/categories ---
+export const seedDefaultsForUser = async (userId) => {
+  if (!supabase || !userId) return;
+
+  try {
+    // 1. Seed accounts if user has none
+    const { data: existingAccounts } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (!existingAccounts || existingAccounts.length === 0) {
+      await supabase.from('accounts').insert([
+        { user_id: userId, name: 'Primary Bank Account', account_type: 'bank', opening_balance: 0 },
+        { user_id: userId, name: 'Cash in Hand', account_type: 'cash', opening_balance: 0 }
+      ]);
+    }
+
+    // 2. Seed categories if user has none
+    const { data: existingCategories } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (!existingCategories || existingCategories.length === 0) {
+      await supabase.from('categories').insert([
+        { user_id: userId, name: 'Groceries & Food', transaction_type: 'expense', icon: 'shopping-cart' },
+        { user_id: userId, name: 'Dining Out', transaction_type: 'expense', icon: 'utensils' },
+        { user_id: userId, name: 'Rent & Housing', transaction_type: 'expense', icon: 'home' },
+        { user_id: userId, name: 'Utilities & Bills', transaction_type: 'expense', icon: 'zap' },
+        { user_id: userId, name: 'Transportation & Fuel', transaction_type: 'expense', icon: 'car' },
+        { user_id: userId, name: 'Shopping & Retail', transaction_type: 'expense', icon: 'bag' },
+        { user_id: userId, name: 'Healthcare & Medical', transaction_type: 'expense', icon: 'activity' },
+        { user_id: userId, name: 'Entertainment & OTT', transaction_type: 'expense', icon: 'tv' },
+        { user_id: userId, name: 'Education & Courses', transaction_type: 'expense', icon: 'book' },
+        { user_id: userId, name: 'Miscellaneous', transaction_type: 'expense', icon: 'tag' },
+        { user_id: userId, name: 'Salary', transaction_type: 'income', icon: 'briefcase' },
+        { user_id: userId, name: 'Freelance / Consulting', transaction_type: 'income', icon: 'laptop' },
+        { user_id: userId, name: 'Investments & Dividends', transaction_type: 'income', icon: 'trending-up' },
+        { user_id: userId, name: 'Other Income', transaction_type: 'income', icon: 'gift' }
+      ]);
+    }
+  } catch (err) {
+    console.warn('Auto-seed defaults encountered notice:', err.message);
+  }
 };

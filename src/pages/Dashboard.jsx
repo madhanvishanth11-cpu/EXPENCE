@@ -15,10 +15,12 @@ import {
   Plus
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
+import { useAuth } from '../context/AuthContext';
 import { formatINR, formatDate } from '../utils/formatters';
 import { Header } from '../components/Header';
 
 export const Dashboard = () => {
+  const { user } = useAuth();
   const {
     totalBalance,
     totalIncome,
@@ -29,7 +31,9 @@ export const Dashboard = () => {
     transactions,
     accounts,
     setActiveScreen,
-    setEditingTransaction
+    setEditingTransaction,
+    error,
+    refreshData,
   } = useFinance();
 
   const recentTransactions = transactions.slice(0, 5);
@@ -269,22 +273,45 @@ export const Dashboard = () => {
         </div>
 
         <div className="divide-y divide-slate-100 overflow-x-auto">
-          {recentTransactions.length === 0 ? (
+          {error && transactions.length === 0 ? (
+            <div className="text-center py-10 px-4 bg-amber-50/60 rounded-xl m-3 border border-amber-200 text-amber-900">
+              <Receipt className="w-9 h-9 text-amber-600 mx-auto mb-2" />
+              <p className="text-sm font-semibold">Unable to load transactions from database</p>
+              <p className="text-xs text-amber-800 mt-1 max-w-sm mx-auto">
+                {error}
+              </p>
+              <button
+                type="button"
+                onClick={refreshData}
+                className="mt-3 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              >
+                Retry Database Connection
+              </button>
+            </div>
+          ) : recentTransactions.length === 0 ? (
             <div className="text-center py-12 px-4">
               <Receipt className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-semibold text-slate-800">No transactions recorded yet</p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                Your database ledger is completely empty. Start logging your income or expenses.
+                No entries found for <strong className="text-slate-700">{user?.email}</strong>. If your financial records were logged under another email account yesterday, sign out to switch accounts.
               </p>
-              <button
-                onClick={() => {
-                  setEditingTransaction(null);
-                  setActiveScreen('add-transaction');
-                }}
-                className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
-              >
-                + Add First Transaction
-              </button>
+              <div className="mt-4 flex items-center justify-center gap-2.5">
+                <button
+                  onClick={() => {
+                    setEditingTransaction(null);
+                    setActiveScreen('add-transaction');
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
+                >
+                  + Add First Transaction
+                </button>
+                <button
+                  onClick={() => setActiveScreen('settings')}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+                >
+                  Account Diagnostics
+                </button>
+              </div>
             </div>
           ) : (
             recentTransactions.map((tx) => {

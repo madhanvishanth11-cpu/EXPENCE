@@ -5,7 +5,7 @@ import * as db from '../services/db';
 const FinanceContext = createContext(null);
 
 export const FinanceProvider = ({ children }) => {
-  const { user, isSupabaseConfigured } = useAuth();
+  const { user } = useAuth();
 
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -18,7 +18,7 @@ export const FinanceProvider = ({ children }) => {
   const [activeScreen, setActiveScreen] = useState('dashboard');
   const [editingTransaction, setEditingTransaction] = useState(null);
 
-  // Fetch all user data whenever user logs in
+  // Fetch all user data whenever user logs in or refreshes
   const fetchData = useCallback(async () => {
     if (!user) {
       setAccounts([]);
@@ -34,8 +34,8 @@ export const FinanceProvider = ({ children }) => {
     setError(null);
 
     try {
-      const [fetchedProfile, fetchedAccounts, fetchedCategories, fetchedTransactions, fetchedBudgets] =
-        await Promise.all([
+      const [profileRes, accountsRes, categoriesRes, txRes, budgetsRes] =
+        await Promise.allSettled([
           db.getProfile(user.id),
           db.getAccounts(),
           db.getCategories(),
@@ -43,14 +43,67 @@ export const FinanceProvider = ({ children }) => {
           db.getBudgets(),
         ]);
 
-      setProfile(fetchedProfile);
-      setAccounts(fetchedAccounts);
-      setCategories(fetchedCategories);
-      setTransactions(fetchedTransactions);
-      setBudgets(fetchedBudgets);
+      const failedQueries = [];
+
+      if (profileRes.status === 'fulfilled') {
+        setProfile(profileRes.value);
+      } else {
+        console.error('Profile query failed:', profileRes.reason);
+        failedQueries.push(`Profile: ${profileRes.reason?.message || 'Failed'}`);
+      }
+
+      if (accountsRes.status === 'fulfilled') {
+        let accList = accountsRes.value || [];
+        // If user has zero accounts (e.g. freshly signed up or pre-trigger user), seed default accounts
+        if (accList.length === 0) {
+          try {
+            await db.seedDefaultsForUser(user.id);
+            accList = await db.getAccounts();
+          } catch (seedErr) {
+            console.warn('Could not auto-seed defaults:', seedErr);
+          }
+        }
+        setAccounts(accList);
+      } else {
+        console.error('Accounts query failed:', accountsRes.reason);
+        failedQueries.push(`Accounts: ${accountsRes.reason?.message || 'Failed'}`);
+      }
+
+      if (categoriesRes.status === 'fulfilled') {
+        let catList = categoriesRes.value || [];
+        if (catList.length === 0) {
+          try {
+            catList = await db.getCategories();
+          } catch {
+            // ignore
+          }
+        }
+        setCategories(catList);
+      } else {
+        console.error('Categories query failed:', categoriesRes.reason);
+        failedQueries.push(`Categories: ${categoriesRes.reason?.message || 'Failed'}`);
+      }
+
+      if (txRes.status === 'fulfilled') {
+        setTransactions(txRes.value || []);
+      } else {
+        console.error('Transactions query failed:', txRes.reason);
+        failedQueries.push(`Transactions: ${txRes.reason?.message || 'Failed'}`);
+      }
+
+      if (budgetsRes.status === 'fulfilled') {
+        setBudgets(budgetsRes.value || []);
+      } else {
+        console.error('Budgets query failed:', budgetsRes.reason);
+        failedQueries.push(`Budgets: ${budgetsRes.reason?.message || 'Failed'}`);
+      }
+
+      if (failedQueries.length > 0) {
+        setError(`Database notice: ${failedQueries.join('; ')}`);
+      }
     } catch (err) {
       console.error('Error fetching Supabase data:', err);
-      setError(err.message || 'Failed to load financial records');
+      setError(err.message || 'Failed to load financial records from database');
     } finally {
       setLoading(false);
     }
@@ -141,15 +194,21 @@ export const FinanceProvider = ({ children }) => {
     return Object.values(monthMap);
   }, [transactions]);
 
-  // Data Actions
+  // Data Actions with strict database verification
   const addTransaction = async (txData) => {
     const created = await db.createTransaction(txData);
+    if (!created) {
+      throw new Error('Database save failed: Server did not return a confirmation.');
+    }
     await fetchData();
     return created;
   };
 
   const updateTransaction = async (id, txData) => {
     const updated = await db.updateTransaction(id, txData);
+    if (!updated) {
+      throw new Error('Database update failed: Server did not return a confirmation.');
+    }
     await fetchData();
     return updated;
   };
@@ -160,12 +219,14 @@ export const FinanceProvider = ({ children }) => {
   };
 
   const saveAccount = async (accountData) => {
+    let result;
     if (accountData.id) {
-      await db.updateAccount(accountData.id, accountData);
+      result = await db.updateAccount(accountData.id, accountData);
     } else {
-      await db.createAccount(accountData);
+      result = await db.createAccount(accountData);
     }
     await fetchData();
+    return result;
   };
 
   const deleteAccount = async (id) => {
@@ -174,8 +235,9 @@ export const FinanceProvider = ({ children }) => {
   };
 
   const saveBudget = async (budgetData) => {
-    await db.saveBudget(budgetData);
+    const result = await db.saveBudget(budgetData);
     await fetchData();
+    return result;
   };
 
   const deleteBudget = async (id) => {

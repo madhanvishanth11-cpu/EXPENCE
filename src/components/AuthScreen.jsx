@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  TrendingUp,
   Mail,
   Lock,
   User,
@@ -8,11 +7,11 @@ import {
   AlertCircle,
   CheckCircle2,
   KeyRound,
-  ShieldCheck,
-  Sparkles
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isSupabaseConfigured } from '../services/supabase';
+import { isSupabaseConfigured, supabaseHost, checkSupabaseHealth } from '../services/supabase';
 import { Logo } from './Logo';
 
 export const AuthScreen = () => {
@@ -24,6 +23,21 @@ export const AuthScreen = () => {
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [healthStatus, setHealthStatus] = useState({ checked: false, ok: true, error: null });
+  const [checkingHealth, setCheckingHealth] = useState(false);
+
+  const verifyBackend = async () => {
+    setCheckingHealth(true);
+    const res = await checkSupabaseHealth();
+    setHealthStatus({ checked: true, ok: res.ok, error: res.error });
+    setCheckingHealth(false);
+  };
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      verifyBackend();
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -52,13 +66,13 @@ export const AuthScreen = () => {
         });
       }
     } catch (err) {
-      // error is already recorded in authError
+      setAuthError(err.message || 'Authentication request failed. Please check your network and credentials.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // If Supabase is not configured yet, show guidance
+  // If Supabase credentials are missing or placeholder
   if (!isSupabaseConfigured) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -69,18 +83,18 @@ export const AuthScreen = () => {
           <div>
             <h2 className="text-xl font-bold text-slate-900">Supabase Configuration Required</h2>
             <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-              SpendWise Phase 2 requires your Supabase Publishable Key to connect to your database.
+              SpendWise requires your Supabase Project URL and Publishable/Anon API key to enable permanent database storage.
             </p>
           </div>
 
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs text-slate-700">
             <p className="font-semibold text-slate-900">Add credentials to <code className="text-emerald-700">.env.local</code>:</p>
             <div className="font-mono text-[11px] bg-slate-100 p-3 rounded-lg border border-slate-200 text-slate-800 space-y-1">
-              <div>VITE_SUPABASE_URL=https://iklrcgxxteuyoxwykxhd.supabase.co</div>
-              <div>VITE_SUPABASE_PUBLISHABLE_KEY=&lt;your-key&gt;</div>
+              <div>VITE_SUPABASE_URL=https://&lt;your-project-ref&gt;.supabase.co</div>
+              <div>VITE_SUPABASE_PUBLISHABLE_KEY=&lt;your-anon-or-publishable-key&gt;</div>
             </div>
             <p className="text-[11px] text-slate-500 pt-1">
-              Find your key under <strong>Project Settings ➔ API ➔ anon public</strong>.
+              Find these under <strong>Supabase Dashboard ➔ Project Settings ➔ API</strong>.
             </p>
           </div>
         </div>
@@ -112,10 +126,37 @@ export const AuthScreen = () => {
             </p>
           </div>
 
+          {/* Database Health Warning (if backend is offline or paused) */}
+          {healthStatus.checked && !healthStatus.ok && (
+            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 space-y-2">
+              <div className="flex items-start gap-2">
+                <Database className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="font-bold text-amber-900">Supabase Host Unreachable</p>
+                  <p className="text-amber-800 text-[11px] mt-0.5 leading-relaxed">
+                    {healthStatus.error}
+                  </p>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
+                <span className="font-mono text-amber-900">{supabaseHost}</span>
+                <button
+                  type="button"
+                  onClick={verifyBackend}
+                  disabled={checkingHealth}
+                  className="inline-flex items-center gap-1 font-semibold text-amber-900 hover:text-amber-950 underline"
+                >
+                  <RefreshCw className={`w-3 h-3 ${checkingHealth ? 'animate-spin' : ''}`} />
+                  <span>Retry Check</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {authError && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{authError}</span>
+              <span className="break-words">{authError}</span>
             </div>
           )}
 

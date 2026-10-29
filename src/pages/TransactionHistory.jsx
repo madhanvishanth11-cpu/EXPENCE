@@ -27,7 +27,9 @@ export const TransactionHistory = () => {
     categories,
     deleteTransaction,
     setEditingTransaction,
-    setActiveScreen
+    setActiveScreen,
+    error,
+    refreshData,
   } = useFinance();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -278,7 +280,22 @@ export const TransactionHistory = () => {
 
       {/* Transactions List */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        {filteredTransactions.length === 0 ? (
+        {error && transactions.length === 0 ? (
+          <div className="text-center py-12 px-4 bg-amber-50/50 text-amber-900">
+            <AlertCircle className="w-10 h-10 text-amber-600 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-amber-950">Unable to load transactions from database</h3>
+            <p className="text-xs text-amber-800 mt-1 max-w-sm mx-auto">
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={refreshData}
+              className="mt-4 px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+            >
+              Retry Database Connection
+            </button>
+          </div>
+        ) : filteredTransactions.length === 0 ? (
           <div className="text-center py-12 px-4">
             <SlidersHorizontal className="w-10 h-10 text-slate-300 mx-auto mb-3" />
             <h3 className="text-sm font-bold text-slate-800">No matching transactions</h3>
