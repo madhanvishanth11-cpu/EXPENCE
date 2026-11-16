@@ -336,6 +336,19 @@ export const AddTransaction = () => {
                 </option>
               ))}
             </select>
+            {accounts.length === 0 && (
+              <p className="text-xs text-amber-700 mt-1.5 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>No accounts found. </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveScreen('accounts')}
+                  className="font-bold underline text-emerald-700 hover:text-emerald-800"
+                >
+                  Create an account first
+                </button>
+              </p>
+            )}
           </div>
 
           <div>

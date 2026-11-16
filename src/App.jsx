@@ -98,7 +98,7 @@ const MainContent = () => {
 };
 
 const ProtectedRoot = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isPasswordRecovery } = useAuth();
 
   if (authLoading) {
     return (
@@ -110,6 +110,11 @@ const ProtectedRoot = () => {
         </div>
       </div>
     );
+  }
+
+  // If password reset recovery link is detected, prioritize Set New Password form
+  if (isPasswordRecovery) {
+    return <AuthScreen initialMode="reset" />;
   }
 
   if (!user) {

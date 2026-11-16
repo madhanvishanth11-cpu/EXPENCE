@@ -112,6 +112,7 @@ create table if not exists public.transactions (
   payment_method text not null check (payment_method in ('cash', 'UPI', 'card', 'bank transfer', 'other')),
   description text not null,
   transaction_date date not null default current_date,
+  transfer_side text check (transfer_side in ('outgoing', 'incoming')),
   transfer_group_id uuid,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -349,7 +350,8 @@ begin
     payment_method,
     description,
     transaction_date,
-    transfer_group_id
+    transfer_group_id,
+    transfer_side
   ) values (
     v_user_id,
     p_source_account_id,
@@ -358,7 +360,8 @@ begin
     p_payment_method,
     coalesce(nullif(p_description, ''), 'Transfer to ' || v_dest_name),
     p_transaction_date,
-    v_group_id
+    v_group_id,
+    'outgoing'
   );
 
   -- 2. Destination account credit record
@@ -370,7 +373,8 @@ begin
     payment_method,
     description,
     transaction_date,
-    transfer_group_id
+    transfer_group_id,
+    transfer_side
   ) values (
     v_user_id,
     p_destination_account_id,
@@ -379,7 +383,8 @@ begin
     p_payment_method,
     coalesce(nullif(p_description, ''), 'Transfer from ' || v_source_name),
     p_transaction_date,
-    v_group_id
+    v_group_id,
+    'incoming'
   );
 
   return v_group_id;

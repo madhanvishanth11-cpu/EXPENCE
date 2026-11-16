@@ -8,23 +8,39 @@ import {
   CheckCircle2,
   KeyRound,
   Database,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { isSupabaseConfigured, supabaseHost, checkSupabaseHealth } from '../services/supabase';
 import { Logo } from './Logo';
 
-export const AuthScreen = () => {
-  const { signIn, signUp, resetPassword, authError, setAuthError } = useAuth();
+export const AuthScreen = ({ initialMode = 'login' }) => {
+  const {
+    signIn,
+    signUp,
+    resetPassword,
+    updatePassword,
+    authError,
+    setAuthError,
+    setIsPasswordRecovery,
+  } = useAuth();
 
-  const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'forgot'
+  const [mode, setMode] = useState(initialMode); // 'login' | 'signup' | 'forgot' | 'reset'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [notice, setNotice] = useState(null);
   const [healthStatus, setHealthStatus] = useState({ checked: false, ok: true, error: null });
   const [checkingHealth, setCheckingHealth] = useState(false);
+
+  useEffect(() => {
+    if (initialMode) {
+      setMode(initialMode);
+    }
+  }, [initialMode]);
 
   const verifyBackend = async () => {
     setCheckingHealth(true);
@@ -39,10 +55,36 @@ export const AuthScreen = () => {
     }
   }, []);
 
+  const switchMode = (newMode) => {
+    setMode(newMode);
+    setNotice(null);
+    setAuthError(null);
+    setPassword('');
+    setConfirmPassword('');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setNotice(null);
     setAuthError(null);
+
+    // Validation
+    if (mode === 'signup' || mode === 'reset') {
+      if (password.length < 6) {
+        setAuthError('Password must be at least 6 characters long.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setAuthError('Passwords do not match. Please re-enter.');
+        return;
+      }
+    }
+
+    if (mode === 'signup' && !displayName.trim()) {
+      setAuthError('Please enter your name.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -62,11 +104,21 @@ export const AuthScreen = () => {
         await resetPassword(email);
         setNotice({
           type: 'success',
-          message: 'Password reset link sent to your email address.'
+          message: 'Password reset link sent to your email address! Please check your inbox.'
         });
+      } else if (mode === 'reset') {
+        await updatePassword(password);
+        setNotice({
+          type: 'success',
+          message: 'Your password has been updated successfully! You can now access your account.'
+        });
+        setTimeout(() => {
+          setIsPasswordRecovery(false);
+          switchMode('login');
+        }, 1500);
       }
     } catch (err) {
-      setAuthError(err.message || 'Authentication request failed. Please check your network and credentials.');
+      setAuthError(err.message || 'Authentication request failed. Please check your credentials and internet connection.');
     } finally {
       setIsLoading(false);
     }
@@ -118,11 +170,13 @@ export const AuthScreen = () => {
               {mode === 'login' && 'Sign in to your account'}
               {mode === 'signup' && 'Create your private account'}
               {mode === 'forgot' && 'Reset your password'}
+              {mode === 'reset' && 'Set New Password'}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
               {mode === 'login' && 'Secure personal cloud storage with Supabase'}
               {mode === 'signup' && 'Your financial records are strictly isolated to you'}
               {mode === 'forgot' && 'Enter your email to receive recovery instructions'}
+              {mode === 'reset' && 'Enter a new password for your SpendWise account'}
             </p>
           </div>
 
@@ -154,9 +208,20 @@ export const AuthScreen = () => {
           )}
 
           {authError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span className="break-words">{authError}</span>
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex flex-col gap-2">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="break-words font-medium">{authError}</span>
+              </div>
+              {authError.toLowerCase().includes('already exists') && mode === 'signup' && (
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="self-start text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline ml-6"
+                >
+                  Sign in with this email instead ➔
+                </button>
+              )}
             </div>
           )}
 
@@ -169,7 +234,7 @@ export const AuthScreen = () => {
               }`}
             >
               <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-              <span>{notice.message}</span>
+              <span className="font-medium">{notice.message}</span>
             </div>
           )}
 
@@ -177,7 +242,7 @@ export const AuthScreen = () => {
             {mode === 'signup' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Your Name
+                  Your Full Name *
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -193,33 +258,35 @@ export const AuthScreen = () => {
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
-                />
+            {mode !== 'reset' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Email Address *
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {mode !== 'forgot' && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Password
+                    {mode === 'reset' ? 'New Password *' : 'Password *'}
                   </label>
                   {mode === 'login' && (
                     <button
                       type="button"
-                      onClick={() => setMode('forgot')}
+                      onClick={() => switchMode('forgot')}
                       className="text-xs text-emerald-700 hover:text-emerald-800 font-medium"
                     >
                       Forgot?
@@ -234,7 +301,27 @@ export const AuthScreen = () => {
                     minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="•••••••• (min 6 characters)"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+            )}
+
+            {(mode === 'signup' || mode === 'reset') && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Confirm Password *
+                </label>
+                <div className="relative">
+                  <ShieldCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="•••••••• (re-enter password)"
                     className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
                   />
                 </div>
@@ -254,6 +341,7 @@ export const AuthScreen = () => {
                     {mode === 'login' && 'Sign In'}
                     {mode === 'signup' && 'Create Account'}
                     {mode === 'forgot' && 'Send Reset Email'}
+                    {mode === 'reset' && 'Save New Password'}
                   </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
@@ -268,11 +356,7 @@ export const AuthScreen = () => {
                 Don't have an account yet?{' '}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signup');
-                    setNotice(null);
-                    setAuthError(null);
-                  }}
+                  onClick={() => switchMode('signup')}
                   className="font-semibold text-emerald-700 hover:underline"
                 >
                   Create one now
@@ -285,11 +369,7 @@ export const AuthScreen = () => {
                 Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('login');
-                    setNotice(null);
-                    setAuthError(null);
-                  }}
+                  onClick={() => switchMode('login')}
                   className="font-semibold text-emerald-700 hover:underline"
                 >
                   Sign in
@@ -302,14 +382,26 @@ export const AuthScreen = () => {
                 Remember your password?{' '}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('login');
-                    setNotice(null);
-                    setAuthError(null);
-                  }}
+                  onClick={() => switchMode('login')}
                   className="font-semibold text-emerald-700 hover:underline"
                 >
                   Back to login
+                </button>
+              </p>
+            )}
+
+            {mode === 'reset' && (
+              <p>
+                Want to return without changing password?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasswordRecovery(false);
+                    switchMode('login');
+                  }}
+                  className="font-semibold text-emerald-700 hover:underline"
+                >
+                  Back to Sign In
                 </button>
               </p>
             )}

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { seedDefaultsForUser } from '../services/db';
 
 const AuthContext = createContext(null);
 
@@ -8,6 +9,16 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+
+  // Check if current browser URL contains recovery tokens/parameters
+  const checkIsRecovery = () => {
+    if (typeof window === 'undefined') return false;
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    return hash.includes('type=recovery') || search.includes('type=recovery');
+  };
+
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(checkIsRecovery);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -27,6 +38,9 @@ export const AuthProvider = ({ children }) => {
         if (error) setAuthError(error.message);
         setSession(session);
         setUser(session?.user ?? null);
+        if (checkIsRecovery()) {
+          setIsPasswordRecovery(true);
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -37,10 +51,15 @@ export const AuthProvider = ({ children }) => {
 
     // Listen to auth state transitions
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         clearTimeout(timeoutTimer);
         setSession(session);
         setUser(session?.user ?? null);
+        if (event === 'PASSWORD_RECOVERY' || checkIsRecovery()) {
+          setIsPasswordRecovery(true);
+        } else if (event === 'SIGNED_OUT') {
+          setIsPasswordRecovery(false);
+        }
         setLoading(false);
       }
     );
@@ -58,14 +77,18 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
     setAuthError(null);
+    const cleanEmail = (email || '').trim().toLowerCase();
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password,
       });
       if (error) {
-        setAuthError(error.message);
-        throw error;
+        const msg = error.message.toLowerCase().includes('invalid login credentials')
+          ? 'Invalid email or password. Please verify your credentials or use Forgot Password.'
+          : error.message;
+        setAuthError(msg);
+        throw new Error(msg);
       }
       return data;
     } catch (err) {
@@ -84,20 +107,34 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
     setAuthError(null);
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanName = (displayName || '').trim();
+
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
         options: {
           data: {
-            display_name: displayName,
+            display_name: cleanName,
+            full_name: cleanName,
           },
         },
       });
       if (error) {
-        setAuthError(error.message);
-        throw error;
+        const msgLower = error.message.toLowerCase();
+        const msg = (msgLower.includes('already registered') || msgLower.includes('user already exists'))
+          ? 'An account with this email already exists. Please sign in instead.'
+          : error.message;
+        setAuthError(msg);
+        throw new Error(msg);
       }
+
+      // If user was created immediately and has an id, ensure default records exist
+      if (data?.user?.id) {
+        seedDefaultsForUser(data.user.id).catch(() => {});
+      }
+
       return data;
     } catch (err) {
       const friendlyMsg = err.message?.includes('Failed to fetch')
@@ -116,6 +153,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUser(null);
       setSession(null);
+      setIsPasswordRecovery(false);
     }
   };
 
@@ -126,16 +164,48 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
     setAuthError(null);
+    const cleanEmail = (email || '').trim().toLowerCase();
     try {
-      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
+      // Direct redirect to window.location.origin with recovery hash
+      const redirectUrl = `${window.location.origin}/#type=recovery`;
+      const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl,
       });
       if (error) throw error;
       return data;
     } catch (err) {
       const friendlyMsg = err.message?.includes('Failed to fetch')
-        ? 'Cannot reach Supabase database.'
+        ? 'Cannot reach Supabase database. Please verify your internet connection or project status.'
         : err.message || 'Failed to send password reset email';
+      setAuthError(friendlyMsg);
+      throw new Error(friendlyMsg);
+    }
+  };
+
+  const updatePassword = async (newPassword) => {
+    if (!supabase) {
+      const err = new Error('Supabase client is not configured.');
+      setAuthError(err.message);
+      throw err;
+    }
+    setAuthError(null);
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) {
+        setAuthError(error.message);
+        throw error;
+      }
+      setIsPasswordRecovery(false);
+      // Clean up the URL hash so recovery parameters don't linger
+      if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState(null, '', cleanUrl);
+      }
+      return data;
+    } catch (err) {
+      const friendlyMsg = err.message || 'Failed to update password';
       setAuthError(friendlyMsg);
       throw new Error(friendlyMsg);
     }
@@ -153,6 +223,9 @@ export const AuthProvider = ({ children }) => {
         signUp,
         signOut,
         resetPassword,
+        updatePassword,
+        isPasswordRecovery,
+        setIsPasswordRecovery,
         isSupabaseConfigured,
       }}
     >
