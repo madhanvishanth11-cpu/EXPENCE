@@ -4,6 +4,13 @@ import { seedDefaultsForUser } from '../services/db';
 
 const AuthContext = createContext(null);
 
+export const getPasswordResetRedirectUrl = () => {
+  if (typeof window === 'undefined') return '';
+  // Support optional custom domain from env, otherwise dynamic browser origin
+  const baseUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+  return `${baseUrl.replace(/\/$/, '')}/#type=recovery`;
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -165,13 +172,22 @@ export const AuthProvider = ({ children }) => {
     }
     setAuthError(null);
     const cleanEmail = (email || '').trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      const err = new Error('Please enter a valid email address.');
+      setAuthError(err.message);
+      throw err;
+    }
+
     try {
-      // Direct redirect to window.location.origin with recovery hash
-      const redirectUrl = `${window.location.origin}/#type=recovery`;
+      const redirectUrl = getPasswordResetRedirectUrl();
       const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: redirectUrl,
       });
-      if (error) throw error;
+      if (error) {
+        setAuthError(error.message);
+        throw error;
+      }
       return data;
     } catch (err) {
       const friendlyMsg = err.message?.includes('Failed to fetch')
@@ -189,6 +205,13 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
     setAuthError(null);
+
+    if (!newPassword || newPassword.length < 6) {
+      const err = new Error('Password must be at least 6 characters long.');
+      setAuthError(err.message);
+      throw err;
+    }
+
     try {
       const { data, error } = await supabase.auth.updateUser({
         password: newPassword,
@@ -197,12 +220,23 @@ export const AuthProvider = ({ children }) => {
         setAuthError(error.message);
         throw error;
       }
+
+      // Securely end the recovery session so user can log in with new credentials
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // ignore sign out error if token already expired
+      }
+      setUser(null);
+      setSession(null);
       setIsPasswordRecovery(false);
-      // Clean up the URL hash so recovery parameters don't linger
+
+      // Clean up URL hash so recovery parameters don't linger
       if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
         const cleanUrl = window.location.origin + window.location.pathname;
         window.history.replaceState(null, '', cleanUrl);
       }
+
       return data;
     } catch (err) {
       const friendlyMsg = err.message || 'Failed to update password';
