@@ -1,0 +1,28 @@
+# SpendWise Netlify Production Configuration
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Single-Page Application (SPA) routing:
+# Ensures all client routes and password recovery redirects resolve to index.html with HTTP 200
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Cache rules for Vite compiled assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache rules for PWA service workers
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/registerSW.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
