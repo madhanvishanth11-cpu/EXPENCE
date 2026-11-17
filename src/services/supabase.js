@@ -1,14 +1,35 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-// Support both standard VITE_SUPABASE_ANON_KEY and VITE_SUPABASE_PUBLISHABLE_KEY
-const rawKey =
+// Sanitize the Supabase base URL:
+// Must be strictly the root origin (e.g. https://<project-ref>.supabase.co)
+// Strips accidental /rest/v1, /auth/v1, trailing slashes, quotes, or path segments pasted in Vercel/env
+let rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').replace(/['"]/g, '').trim();
+let sanitizedUrl = '';
+
+if (rawUrl) {
+  try {
+    if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+      rawUrl = `https://${rawUrl}`;
+    }
+    const parsed = new URL(rawUrl);
+    // Strictly protocol + host (drops any /rest/v1 or trailing path that causes PGRST125 "Invalid path specified in request URL")
+    sanitizedUrl = `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    sanitizedUrl = rawUrl
+      .replace(/\/rest\/v1.*$/i, '')
+      .replace(/\/auth\/v1.*$/i, '')
+      .replace(/\/+$/, '');
+  }
+}
+
+const rawKey = (
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  '';
+  ''
+).replace(/['"]/g, '').trim();
 
-export const supabaseUrl = rawUrl.trim().replace(/\/$/, '');
-export const supabaseKey = rawKey.trim();
+export const supabaseUrl = sanitizedUrl;
+export const supabaseKey = rawKey;
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -41,13 +62,12 @@ export const supabaseHost = parsedHost;
 
 /**
  * Actively checks network reachability to the configured Supabase instance.
- * Identifies paused instances, dead DNS records, or network outages.
  */
 export const checkSupabaseHealth = async () => {
   if (!isSupabaseConfigured || !supabaseUrl || !supabaseKey) {
     return {
       ok: false,
-      error: 'Supabase credentials are not configured in .env.local. Please provide VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+      error: 'Supabase credentials are not configured in Vercel/env. Please provide VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
     };
   }
 

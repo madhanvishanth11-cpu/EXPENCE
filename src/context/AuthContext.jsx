@@ -96,6 +96,8 @@ export const AuthProvider = ({ children }) => {
           msg = 'Invalid email or password. Please verify your credentials or use Forgot Password.';
         } else if (msgLower.includes('email not confirmed')) {
           msg = 'Your email address has not been confirmed yet. Please check your inbox for the Supabase confirmation link, or disable "Confirm email" in Supabase Authentication settings.';
+        } else if (msgLower.includes('invalid path')) {
+          msg = 'Invalid Supabase URL in settings. In Vercel Environment Variables, VITE_SUPABASE_URL must be strictly https://<project-ref>.supabase.co without /rest/v1 or extra paths.';
         }
         setAuthError(msg);
         throw new Error(msg);
@@ -139,6 +141,8 @@ export const AuthProvider = ({ children }) => {
           msg = 'An account with this email already exists. Please sign in instead.';
         } else if (msgLower.includes('rate limit')) {
           msg = 'Email rate limit exceeded in Supabase (free tier allows 3 emails/hour). Please wait before trying again or configure custom SMTP in Supabase Dashboard.';
+        } else if (msgLower.includes('invalid path')) {
+          msg = 'Invalid Supabase URL in settings. In Vercel Environment Variables, VITE_SUPABASE_URL must be strictly https://<project-ref>.supabase.co without /rest/v1 or extra paths.';
         }
         setAuthError(msg);
         throw new Error(msg);
