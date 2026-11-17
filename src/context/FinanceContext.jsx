@@ -20,15 +20,7 @@ export const FinanceProvider = ({ children }) => {
 
   // Fetch all user data whenever user logs in or refreshes
   const fetchData = useCallback(async () => {
-    if (!user) {
-      setAccounts([]);
-      setCategories([]);
-      setTransactions([]);
-      setBudgets([]);
-      setProfile(null);
-      setLoading(false);
-      return;
-    }
+    const activeUserId = user?.id || 'local-user';
 
     setLoading(true);
     setError(null);
@@ -36,7 +28,7 @@ export const FinanceProvider = ({ children }) => {
     try {
       const [profileRes, accountsRes, categoriesRes, txRes, budgetsRes] =
         await Promise.allSettled([
-          db.getProfile(user.id),
+          db.getProfile(activeUserId),
           db.getAccounts(),
           db.getCategories(),
           db.getTransactions(),
@@ -57,7 +49,7 @@ export const FinanceProvider = ({ children }) => {
         // If user has zero accounts (e.g. freshly signed up or pre-trigger user), seed default accounts
         if (accList.length === 0) {
           try {
-            await db.seedDefaultsForUser(user.id);
+            await db.seedDefaultsForUser(activeUserId);
             accList = await db.getAccounts();
           } catch (seedErr) {
             console.warn('Could not auto-seed defaults:', seedErr);

@@ -74,7 +74,7 @@ export const Sidebar = () => {
         })}
       </nav>
 
-      {/* User Session Footer & Logout */}
+      {/* User Session Footer */}
       <div className="mt-auto pt-4 border-t border-slate-100 space-y-3">
         <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -83,16 +83,9 @@ export const Sidebar = () => {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-900 truncate">{displayName}</p>
-              <p className="text-[11px] text-slate-400 truncate">{user?.email}</p>
+              <p className="text-[11px] text-emerald-600 font-medium truncate">Ready to track</p>
             </div>
           </div>
-          <button
-            onClick={signOut}
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
-            title="Sign out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </aside>

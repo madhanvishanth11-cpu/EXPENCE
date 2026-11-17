@@ -1,9 +1,8 @@
 import React from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
-import { AuthScreen } from './components/AuthScreen';
 import { Dashboard } from './pages/Dashboard';
 import { AddTransaction } from './pages/AddTransaction';
 import { TransactionHistory } from './pages/TransactionHistory';
@@ -98,29 +97,6 @@ const MainContent = () => {
 };
 
 const ProtectedRoot = () => {
-  const { user, loading: authLoading, isPasswordRecovery } = useAuth();
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4 animate-fadeIn">
-        <Logo size="lg" className="animate-pulse" />
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 border-2 border-slate-900 border-t-[#FF6A00] rounded-full animate-spin"></div>
-          <p className="text-xs font-semibold text-slate-600">Connecting to SpendWise...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // If password reset recovery link is detected, prioritize Set New Password form
-  if (isPasswordRecovery) {
-    return <AuthScreen initialMode="reset" />;
-  }
-
-  if (!user) {
-    return <AuthScreen />;
-  }
-
   return (
     <FinanceProvider>
       <MainContent />

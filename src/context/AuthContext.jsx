@@ -10,10 +10,19 @@ export const getPasswordResetRedirectUrl = () => {
   return `${baseUrl.replace(/\/$/, '')}/#type=recovery`;
 };
 
+export const DEFAULT_USER = {
+  id: 'local-user',
+  email: 'spendwise.user@local',
+  user_metadata: {
+    display_name: 'SpendWise User',
+    full_name: 'SpendWise User',
+  },
+};
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(DEFAULT_USER);
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
 
   // Check if current browser URL contains recovery tokens/parameters
@@ -32,46 +41,43 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    // Safety timeout: ensure loading state never hangs indefinitely
-    const timeoutTimer = setTimeout(() => {
-      setLoading(false);
-    }, 4000);
-
-    // Check active session on mount
+    // Check active session in background without blocking the UI
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
-        clearTimeout(timeoutTimer);
         if (error) setAuthError(error.message);
-        setSession(session);
-        setUser(session?.user ?? null);
+        if (session?.user) {
+          setSession(session);
+          setUser(session.user);
+        } else {
+          setUser(DEFAULT_USER);
+        }
         if (checkIsRecovery()) {
           setIsPasswordRecovery(true);
         }
-        setLoading(false);
       })
       .catch((err) => {
-        clearTimeout(timeoutTimer);
         setAuthError(err.message);
-        setLoading(false);
       });
 
     // Listen to auth state transitions
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        clearTimeout(timeoutTimer);
-        setSession(session);
-        setUser(session?.user ?? null);
+        if (session?.user) {
+          setSession(session);
+          setUser(session.user);
+        } else {
+          setUser(DEFAULT_USER);
+          setSession(null);
+        }
         if (event === 'PASSWORD_RECOVERY' || checkIsRecovery()) {
           setIsPasswordRecovery(true);
         } else if (event === 'SIGNED_OUT') {
           setIsPasswordRecovery(false);
         }
-        setLoading(false);
       }
     );
 
     return () => {
-      clearTimeout(timeoutTimer);
       subscription?.unsubscribe();
     };
   }, []);
@@ -165,15 +171,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signOut = async () => {
-    if (!supabase) return;
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } finally {
-      setUser(null);
-      setSession(null);
-      setIsPasswordRecovery(false);
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // ignore
+      }
     }
+    setUser(DEFAULT_USER);
+    setSession(null);
+    setIsPasswordRecovery(false);
   };
 
   const resetPassword = async (email) => {

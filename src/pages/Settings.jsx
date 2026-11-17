@@ -90,11 +90,16 @@ export const Settings = () => {
               <p className="text-xs text-slate-500 mt-0.5">{user?.email}</p>
             </div>
             <button
-              onClick={signOut}
-              className="self-start sm:self-center inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition-colors"
+              onClick={() => {
+                if (window.confirm('Reset all financial data back to defaults?')) {
+                  localStorage.clear();
+                  window.location.reload();
+                }
+              }}
+              className="self-start sm:self-center inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg transition-colors"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Data</span>
             </button>
           </div>
 
