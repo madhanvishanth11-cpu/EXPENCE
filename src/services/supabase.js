@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-// Support both VITE_SUPABASE_PUBLISHABLE_KEY and fallback to VITE_SUPABASE_ANON_KEY
+// Support both standard VITE_SUPABASE_ANON_KEY and VITE_SUPABASE_PUBLISHABLE_KEY
 const rawKey =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   '';
 
-export const supabaseUrl = rawUrl.trim();
+export const supabaseUrl = rawUrl.trim().replace(/\/$/, '');
 export const supabaseKey = rawKey.trim();
 
 export const isSupabaseConfigured = Boolean(
@@ -15,7 +15,7 @@ export const isSupabaseConfigured = Boolean(
   supabaseKey &&
   supabaseUrl !== 'https://your-project-id.supabase.co' &&
   !supabaseKey.includes('placeholder') &&
-  !supabaseKey.includes('your-supabase-publishable-key-here')
+  !supabaseKey.includes('your-supabase-')
 );
 
 export const supabase = isSupabaseConfigured
@@ -24,6 +24,7 @@ export const supabase = isSupabaseConfigured
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        flowType: 'pkce',
       },
     })
   : null;
@@ -46,13 +47,13 @@ export const checkSupabaseHealth = async () => {
   if (!isSupabaseConfigured || !supabaseUrl || !supabaseKey) {
     return {
       ok: false,
-      error: 'Supabase credentials are not configured in .env.local. Please provide your Supabase Project URL and API Key.',
+      error: 'Supabase credentials are not configured in .env.local. Please provide VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
     };
   }
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     const res = await fetch(`${supabaseUrl}/auth/v1/health`, {
       method: 'GET',
@@ -77,7 +78,7 @@ export const checkSupabaseHealth = async () => {
       ok: false,
       error: isAbort
         ? `Connection to Supabase timed out (${supabaseHost}). Check your internet connection or project status.`
-        : `Cannot reach Supabase host (${supabaseHost}): ${err.message}. If your project was paused due to inactivity, unpause it in the Supabase Dashboard.`,
+        : `Cannot reach Supabase host (${supabaseHost}): ${err.message}. If your project was paused, unpause it in the Supabase Dashboard.`,
     };
   }
 };

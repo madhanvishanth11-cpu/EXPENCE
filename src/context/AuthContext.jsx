@@ -1,12 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { supabase, isSupabaseConfigured, supabaseHost } from '../services/supabase';
 import { seedDefaultsForUser } from '../services/db';
 
 const AuthContext = createContext(null);
 
 export const getPasswordResetRedirectUrl = () => {
   if (typeof window === 'undefined') return '';
-  // Support optional custom domain from env, otherwise dynamic browser origin
   const baseUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
   return `${baseUrl.replace(/\/$/, '')}/#type=recovery`;
 };
@@ -33,10 +32,10 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    // Safety timeout: ensure loading state never hangs indefinitely (e.g. if network or credentials fail)
+    // Safety timeout: ensure loading state never hangs indefinitely
     const timeoutTimer = setTimeout(() => {
       setLoading(false);
-    }, 3000);
+    }, 4000);
 
     // Check active session on mount
     supabase.auth.getSession()
@@ -91,16 +90,21 @@ export const AuthProvider = ({ children }) => {
         password,
       });
       if (error) {
-        const msg = error.message.toLowerCase().includes('invalid login credentials')
-          ? 'Invalid email or password. Please verify your credentials or use Forgot Password.'
-          : error.message;
+        let msg = error.message;
+        const msgLower = error.message.toLowerCase();
+        if (msgLower.includes('invalid login credentials')) {
+          msg = 'Invalid email or password. Please verify your credentials or use Forgot Password.';
+        } else if (msgLower.includes('email not confirmed')) {
+          msg = 'Your email address has not been confirmed yet. Please check your inbox for the Supabase confirmation link, or disable "Confirm email" in Supabase Authentication settings.';
+        }
         setAuthError(msg);
         throw new Error(msg);
       }
       return data;
     } catch (err) {
-      const friendlyMsg = err.message?.includes('Failed to fetch')
-        ? 'Cannot reach Supabase database. Please verify your internet connection or check if your Supabase project is active.'
+      const isFetchErr = err.message?.toLowerCase().includes('failed to fetch') || err.message?.toLowerCase().includes('networkerror');
+      const friendlyMsg = isFetchErr
+        ? `Failed to fetch: Cannot connect to Supabase at ${supabaseHost}. Please verify your internet connection or check if your Supabase project is active.`
         : err.message || 'Authentication failed';
       setAuthError(friendlyMsg);
       throw new Error(friendlyMsg);
@@ -129,23 +133,27 @@ export const AuthProvider = ({ children }) => {
         },
       });
       if (error) {
+        let msg = error.message;
         const msgLower = error.message.toLowerCase();
-        const msg = (msgLower.includes('already registered') || msgLower.includes('user already exists'))
-          ? 'An account with this email already exists. Please sign in instead.'
-          : error.message;
+        if (msgLower.includes('already registered') || msgLower.includes('user already exists')) {
+          msg = 'An account with this email already exists. Please sign in instead.';
+        } else if (msgLower.includes('rate limit')) {
+          msg = 'Email rate limit exceeded in Supabase (free tier allows 3 emails/hour). Please wait before trying again or configure custom SMTP in Supabase Dashboard.';
+        }
         setAuthError(msg);
         throw new Error(msg);
       }
 
       // If user was created immediately and has an id, ensure default records exist
-      if (data?.user?.id) {
+      if (data?.user?.id && data?.session) {
         seedDefaultsForUser(data.user.id).catch(() => {});
       }
 
       return data;
     } catch (err) {
-      const friendlyMsg = err.message?.includes('Failed to fetch')
-        ? 'Cannot reach Supabase database. Please verify your internet connection or check if your Supabase project is active.'
+      const isFetchErr = err.message?.toLowerCase().includes('failed to fetch') || err.message?.toLowerCase().includes('networkerror');
+      const friendlyMsg = isFetchErr
+        ? `Failed to fetch: Cannot reach Supabase at ${supabaseHost}. Please verify your internet connection or check if your Supabase project is active.`
         : err.message || 'Account creation failed';
       setAuthError(friendlyMsg);
       throw new Error(friendlyMsg);
@@ -185,13 +193,18 @@ export const AuthProvider = ({ children }) => {
         redirectTo: redirectUrl,
       });
       if (error) {
-        setAuthError(error.message);
-        throw error;
+        let msg = error.message;
+        if (error.message.toLowerCase().includes('rate limit')) {
+          msg = 'Email rate limit exceeded in Supabase (free tier allows 3 emails/hour). Please wait before requesting another reset link, or configure custom SMTP in Supabase Dashboard.';
+        }
+        setAuthError(msg);
+        throw new Error(msg);
       }
       return data;
     } catch (err) {
-      const friendlyMsg = err.message?.includes('Failed to fetch')
-        ? 'Cannot reach Supabase database. Please verify your internet connection or project status.'
+      const isFetchErr = err.message?.toLowerCase().includes('failed to fetch') || err.message?.toLowerCase().includes('networkerror');
+      const friendlyMsg = isFetchErr
+        ? `Failed to fetch: Cannot reach Supabase at ${supabaseHost}. Please check your internet connection or verify your Supabase project status.`
         : err.message || 'Failed to send password reset email';
       setAuthError(friendlyMsg);
       throw new Error(friendlyMsg);
@@ -221,17 +234,16 @@ export const AuthProvider = ({ children }) => {
         throw error;
       }
 
-      // Securely end the recovery session so user can log in with new credentials
+      // Securely end recovery session so user can log in with new credentials
       try {
         await supabase.auth.signOut();
       } catch {
-        // ignore sign out error if token already expired
+        // ignore sign out error
       }
       setUser(null);
       setSession(null);
       setIsPasswordRecovery(false);
 
-      // Clean up URL hash so recovery parameters don't linger
       if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
         const cleanUrl = window.location.origin + window.location.pathname;
         window.history.replaceState(null, '', cleanUrl);
@@ -239,7 +251,10 @@ export const AuthProvider = ({ children }) => {
 
       return data;
     } catch (err) {
-      const friendlyMsg = err.message || 'Failed to update password';
+      const isFetchErr = err.message?.toLowerCase().includes('failed to fetch') || err.message?.toLowerCase().includes('networkerror');
+      const friendlyMsg = isFetchErr
+        ? `Failed to fetch: Cannot connect to Supabase (${supabaseHost}).`
+        : err.message || 'Failed to update password';
       setAuthError(friendlyMsg);
       throw new Error(friendlyMsg);
     }
