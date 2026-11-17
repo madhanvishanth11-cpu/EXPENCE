@@ -1,0 +1,446 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Mail,
+  Lock,
+  User,
+  ArrowRight,
+  AlertCircle,
+  CheckCircle2,
+  KeyRound,
+  Database,
+  RefreshCw,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  ArrowLeft
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { isSupabaseConfigured, supabaseHost, checkSupabaseHealth } from '../services/supabase';
+import { Logo } from './Logo';
+
+export const AuthScreen = ({ initialMode = 'login' }) => {
+  const {
+    signIn,
+    signUp,
+    resetPassword,
+    updatePassword,
+    authError,
+    setAuthError,
+    setIsPasswordRecovery,
+  } = useAuth();
+
+  const [mode, setMode] = useState(initialMode); // 'login' | 'signup' | 'forgot' | 'reset'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [healthStatus, setHealthStatus] = useState({ checked: false, ok: true, error: null });
+  const [checkingHealth, setCheckingHealth] = useState(false);
+
+  useEffect(() => {
+    if (initialMode) {
+      setMode(initialMode);
+    }
+  }, [initialMode]);
+
+  const verifyBackend = async () => {
+    setCheckingHealth(true);
+    const res = await checkSupabaseHealth();
+    setHealthStatus({ checked: true, ok: res.ok, error: res.error });
+    setCheckingHealth(false);
+  };
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      verifyBackend();
+    }
+  }, []);
+
+  const switchMode = (newMode) => {
+    setMode(newMode);
+    setNotice(null);
+    setAuthError(null);
+    setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setNotice(null);
+    setAuthError(null);
+
+    // Validation
+    if (mode === 'signup' || mode === 'reset') {
+      if (!password || password.length < 6) {
+        setAuthError('Password must be at least 6 characters long.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setAuthError('Passwords do not match. Please ensure both passwords are identical.');
+        return;
+      }
+    }
+
+    if (mode === 'signup' && !displayName.trim()) {
+      setAuthError('Please enter your full name.');
+      return;
+    }
+
+    if (mode === 'forgot') {
+      const cleanEmail = email.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+        setAuthError('Please enter a valid email address (e.g. you@example.com).');
+        return;
+      }
+    }
+
+    setIsLoading(true);
+
+    try {
+      if (mode === 'login') {
+        await signIn(email, password);
+      } else if (mode === 'signup') {
+        const data = await signUp(email, password, displayName);
+        if (data?.session) {
+          setNotice({ type: 'success', message: 'Account created! Welcome to SpendWise.' });
+        } else {
+          setNotice({
+            type: 'info',
+            message: 'Account created! Please check your email to confirm your account (if email confirmation is required).'
+          });
+        }
+      } else if (mode === 'forgot') {
+        await resetPassword(email);
+        setNotice({
+          type: 'success',
+          message: 'Password reset link sent to your email address! Please check your inbox and follow the link to set your new password.'
+        });
+      } else if (mode === 'reset') {
+        await updatePassword(password);
+        setNotice({
+          type: 'success',
+          message: 'Your password has been successfully reset! Please sign in with your new password.'
+        });
+        switchMode('login');
+      }
+    } catch (err) {
+      setAuthError(err.message || 'Authentication request failed. Please check your credentials and network connection.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // If Supabase credentials are missing or placeholder
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white p-8 rounded-2xl border border-slate-200/90 shadow-sm space-y-6">
+          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 border border-amber-200/80 flex items-center justify-center">
+            <KeyRound className="w-6 h-6 stroke-[2.2]" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Supabase Configuration Required</h2>
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              SpendWise requires your Supabase Project URL and Publishable/Anon API key to enable permanent database storage.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs text-slate-700">
+            <p className="font-semibold text-slate-900">Add credentials to <code className="text-emerald-700">.env.local</code>:</p>
+            <div className="font-mono text-[11px] bg-slate-100 p-3 rounded-lg border border-slate-200 text-slate-800 space-y-1">
+              <div>VITE_SUPABASE_URL=https://&lt;your-project-ref&gt;.supabase.co</div>
+              <div>VITE_SUPABASE_PUBLISHABLE_KEY=&lt;your-anon-or-publishable-key&gt;</div>
+            </div>
+            <p className="text-[11px] text-slate-500 pt-1">
+              Find these under <strong>Supabase Dashboard ➔ Project Settings ➔ API</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center flex flex-col items-center">
+        <Logo size="lg" className="justify-center mb-2" />
+        <p className="mt-1 text-xs text-slate-500 font-medium">
+          Remember Where You Spend & Track Your Wealth
+        </p>
+      </div>
+
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-6 sm:px-10 rounded-2xl border border-slate-200/90 shadow-sm space-y-6">
+          <div className="text-center">
+            <h3 className="text-lg font-bold text-slate-900">
+              {mode === 'login' && 'Sign in to your account'}
+              {mode === 'signup' && 'Create your private account'}
+              {mode === 'forgot' && 'Reset your password'}
+              {mode === 'reset' && 'Create New Password'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              {mode === 'login' && 'Secure personal cloud storage with Supabase'}
+              {mode === 'signup' && 'Your financial records are strictly isolated to you'}
+              {mode === 'forgot' && 'Enter your registered email to receive a password reset link'}
+              {mode === 'reset' && 'Enter and confirm your new secure password'}
+            </p>
+          </div>
+
+          {/* Database Health Warning (if backend is offline or paused) */}
+          {healthStatus.checked && !healthStatus.ok && (
+            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 space-y-2">
+              <div className="flex items-start gap-2">
+                <Database className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="font-bold text-amber-900">Supabase Host Unreachable</p>
+                  <p className="text-amber-800 text-[11px] mt-0.5 leading-relaxed">
+                    {healthStatus.error}
+                  </p>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
+                <span className="font-mono text-amber-900">{supabaseHost}</span>
+                <button
+                  type="button"
+                  onClick={verifyBackend}
+                  disabled={checkingHealth}
+                  className="inline-flex items-center gap-1 font-semibold text-amber-900 hover:text-amber-950 underline"
+                >
+                  <RefreshCw className={`w-3 h-3 ${checkingHealth ? 'animate-spin' : ''}`} />
+                  <span>Retry Check</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {authError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex flex-col gap-2">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="break-words font-medium">{authError}</span>
+              </div>
+              {authError.toLowerCase().includes('already exists') && mode === 'signup' && (
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="self-start text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline ml-6"
+                >
+                  Sign in with this email instead ➔
+                </button>
+              )}
+            </div>
+          )}
+
+          {notice && (
+            <div
+              className={`p-3.5 rounded-xl text-xs flex items-start gap-2.5 ${
+                notice.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-sky-50 border border-sky-200 text-sky-800'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+              <span className="font-medium">{notice.message}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Your Full Name *
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    required
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="e.g. Madhan Vishanth"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+            )}
+
+            {mode !== 'reset' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Email Address *
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+            )}
+
+            {mode !== 'forgot' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    {mode === 'reset' ? 'New Password *' : 'Password *'}
+                  </label>
+                </div>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="•••••••• (min 6 characters)"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-0.5"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {/* Visible "Forgot Password?" link placed below the password field on Login */}
+                {mode === 'login' && (
+                  <div className="flex justify-end pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => switchMode('forgot')}
+                      className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(mode === 'signup' || mode === 'reset') && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  {mode === 'reset' ? 'Confirm New Password *' : 'Confirm Password *'}
+                </label>
+                <div className="relative">
+                  <ShieldCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="•••••••• (re-enter password)"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-0.5"
+                    aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-xs hover:shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              {isLoading ? (
+                <span>Please wait...</span>
+              ) : (
+                <>
+                  <span>
+                    {mode === 'login' && 'Sign In'}
+                    {mode === 'signup' && 'Create Account'}
+                    {mode === 'forgot' && 'Send Reset Link'}
+                    {mode === 'reset' && 'Save New Password'}
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Mode Switchers */}
+          <div className="pt-4 border-t border-slate-100 text-center text-xs text-slate-500 space-y-2">
+            {mode === 'login' && (
+              <p>
+                Don't have an account yet?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('signup')}
+                  className="font-semibold text-emerald-700 hover:underline"
+                >
+                  Create one now
+                </button>
+              </p>
+            )}
+
+            {mode === 'signup' && (
+              <p>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="font-semibold text-emerald-700 hover:underline"
+                >
+                  Sign in
+                </button>
+              </p>
+            )}
+
+            {mode === 'forgot' && (
+              <p>
+                Remember your password?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                </button>
+              </p>
+            )}
+
+            {mode === 'reset' && (
+              <p>
+                Want to return without changing password?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasswordRecovery(false);
+                    switchMode('login');
+                  }}
+                  className="font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Cancel & Return to Sign In
+                </button>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
